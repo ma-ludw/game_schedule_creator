@@ -47,6 +47,18 @@ class ScheduleGenerator():
             
             self.jungschar_teams[js.name] = jungschar_team_list
 
+        # Create a list of lists, where each sublist contains the team numbers for a Jungschar
+        self.jungschar_teams_lists = list(self.jungschar_teams.values())
+
+        # Create all possible inter-Jungschar pairs
+        self.all_possible_pairs = []
+        for i, jungschar1_teams in enumerate(self.jungschar_teams_lists):
+            for j, jungschar2_teams in enumerate(self.jungschar_teams_lists):
+                if i < j:  # Only consider each pair of Jungscharen once
+                    for team1 in jungschar1_teams:
+                        for team2 in jungschar2_teams:
+                            self.all_possible_pairs.append((team1, team2))
+
         self.n_tries = 100000000
         
         # Create team lookup cache for faster access
@@ -190,22 +202,8 @@ class ScheduleGenerator():
         # Generate schedule: only teams from different jungscharen play against each other
         # Use a proper round-robin algorithm with rotation to ensure variety
         
-        # Separate teams by Jungschar
-        jungschar_teams_lists = []
-        for jungschar_name in self.jungschar_teams.keys():
-            jungschar_teams_lists.append(self.jungschar_teams[jungschar_name])
-        
-        # Create all possible inter-Jungschar pairs
-        all_possible_pairs = []
-        for i, jungschar1_teams in enumerate(jungschar_teams_lists):
-            for j, jungschar2_teams in enumerate(jungschar_teams_lists):
-                if i < j:  # Only consider each pair of Jungscharen once
-                    for team1 in jungschar1_teams:
-                        for team2 in jungschar2_teams:
-                            all_possible_pairs.append((team1, team2))
-        
         # Shuffle the pairs to create variety
-        random.shuffle(all_possible_pairs)
+        random.shuffle(self.all_possible_pairs)
         
         schedule = []
         pairs_used = set()
@@ -215,7 +213,7 @@ class ScheduleGenerator():
             teams_used_this_round = set()
             
             # Try to find pairs for this round
-            for pair in all_possible_pairs:
+            for pair in self.all_possible_pairs:
                 team1, team2 = pair
                 
                 # Check if this pair hasn't been used and neither team is already scheduled this round
@@ -235,7 +233,7 @@ class ScheduleGenerator():
             
             # If we couldn't find enough unique pairs, fill with available pairs
             if len(round_schedule) < min(self.n_games, self.n_teams // 2):
-                for pair in all_possible_pairs:
+                for pair in self.all_possible_pairs:
                     team1, team2 = pair
                     
                     if (team1 not in teams_used_this_round and 
@@ -251,7 +249,7 @@ class ScheduleGenerator():
             schedule.append(round_schedule)
             
             # Reset pairs_used if we've used all possible combinations
-            if len(pairs_used) >= len(all_possible_pairs):
+            if len(pairs_used) >= len(self.all_possible_pairs):
                 pairs_used.clear()
 
         return schedule

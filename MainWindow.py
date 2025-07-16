@@ -101,7 +101,7 @@ class Ui_MainWindow(object):
 
         self.tableWidget_group_names_jungscharen = QTableWidget(self.centralwidget)
         self.tableWidget_group_names_jungscharen.setObjectName(u"tableWidget_group_names_jungscharen")
-        self.tableWidget_group_names_jungscharen.setEnabled(True)
+        self.tableWidget_group_names_jungscharen.setEnabled(False)
         sizePolicy4 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         sizePolicy4.setHorizontalStretch(0)
         sizePolicy4.setVerticalStretch(0)

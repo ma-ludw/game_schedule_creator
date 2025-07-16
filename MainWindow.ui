@@ -110,7 +110,7 @@
       <item row="1" column="2">
        <widget class="QTableWidget" name="tableWidget_group_names_jungscharen">
         <property name="enabled">
-         <bool>true</bool>
+         <bool>false</bool>
         </property>
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Maximum">
