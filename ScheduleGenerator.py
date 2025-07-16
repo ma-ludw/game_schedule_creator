@@ -93,7 +93,7 @@ class ScheduleGenerator():
 
         # init
         best_schedule = self.generate_random_schedule()
-        best_cost, team_matchups, game_counts, game_team_counts = self.check_schedule(best_schedule)  # Get initial cost
+        best_cost, best_team_matchups, best_game_counts, best_game_team_counts = self.check_schedule(best_schedule)  # Get initial cost
         tries = 1
 
         self.progress_update_callback(0)
@@ -102,8 +102,12 @@ class ScheduleGenerator():
             random_schedule = self.generate_random_schedule()
             cost, team_matchups, game_counts, game_team_counts = self.check_schedule(random_schedule)
             if cost < best_cost:
+                print(f"New best schedule found after {tries} tries with cost {cost}")
                 best_schedule = random_schedule
                 best_cost = cost
+                best_team_matchups = team_matchups
+                best_game_counts = game_counts
+                best_game_team_counts = game_team_counts
                 if cost < 0.01:
                     print(f"Found a perfect schedule after {tries} tries!")
                     self.progress_update_callback(100)
@@ -115,20 +119,20 @@ class ScheduleGenerator():
                 QApplication.processEvents()  # Force GUI update
 
         print("Team matchups:")
-        for teams, count in team_matchups.items():
+        for teams, count in best_team_matchups.items():
             print(f"  Teams {teams[0]} and {teams[1]}: {count} times")
 
         print("Game counts:")
-        for game, count in game_counts.items():
+        for game, count in best_game_counts.items():
             print(f"  Game {game}: {count} times")
 
         print("Game team counts:")
-        for game_number, counts in enumerate(game_team_counts, start=1):
+        for game_number, counts in enumerate(best_game_team_counts, start=1):
             print(f"  Game {game_number}: {dict(enumerate(counts, start=1))}")
 
 
-        return self.convert_schedule_to_names(best_schedule), self.convert_game_counts_to_names(game_counts), self.convert_team_matchups_to_names(team_matchups), self.convert_game_team_counts_to_names(game_team_counts)
-    
+        return self.convert_schedule_to_names(best_schedule), self.convert_game_counts_to_names(best_game_counts), self.convert_team_matchups_to_names(best_team_matchups), self.convert_game_team_counts_to_names(best_game_team_counts)
+
     def convert_schedule_to_names(self, schedule: list) -> pd.DataFrame:
         # Create a table where columns are games and rows are rounds
         table = []

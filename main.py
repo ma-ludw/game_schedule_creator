@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessageBox
+from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessageBox, QFileDialog
 
 import sys
 import pandas as pd
@@ -130,11 +130,19 @@ class Window(QMainWindow):
             return
         
         # Save schedule to Excel file
-        with pd.ExcelWriter('schedule.xlsx') as writer:
-            schedule.to_excel(writer, sheet_name='Schedule')
-            game_counts.to_excel(writer, sheet_name='Game Counts', index=False)
-            team_matchups.to_excel(writer, sheet_name='Team Matchups', index=False)
-            game_team_counts.to_excel(writer, sheet_name='Game Team Counts', index=False)
+        if debug:
+            file_path = 'schedule.xlsx'
+        else:
+            # Ask the user where to save the schedule file
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save Schedule", "schedule.xlsx", "Excel Files (*.xlsx)")
+            if not file_path:
+                file_path = 'schedule.xlsx'  # User cancelled
+
+        with pd.ExcelWriter(file_path) as writer:
+                schedule.to_excel(writer, sheet_name='Schedule')
+                game_counts.to_excel(writer, sheet_name='Game Counts', index=False)
+                team_matchups.to_excel(writer, sheet_name='Team Matchups', index=False)
+                game_team_counts.to_excel(writer, sheet_name='Game Team Counts', index=False)
 
 
 
