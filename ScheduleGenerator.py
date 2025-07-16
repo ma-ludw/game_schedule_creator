@@ -62,7 +62,7 @@ class ScheduleGenerator():
                         for team2 in jungschar2_teams:
                             self.all_possible_pairs.append((team1, team2))
 
-        self.n_tries = 100000000
+        self.n_tries = 1000000
         
         # Create team lookup cache for faster access
         self.team_lookup = {team["team_number"]: team for team in self.team_names}

@@ -1,3 +1,8 @@
 schedule.xlsx
 __pycache__/
 .vscode/
+
+# exclude executable build files
+/build/
+*.spec
+/dist/
