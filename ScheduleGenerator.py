@@ -289,13 +289,13 @@ class ScheduleGenerator():
                     team1, team2 = team2, team1
                 team_matchups[(team1, team2)] += 1 # count how many times this matchup was played
 
-        diff_game_counts = max(game_counts.values()) - min(game_counts.values()) # difference between the most and least played games
-        diff_game_team_counts = np.amax(game_team_counts) - np.amin(game_team_counts) # difference between the team that played one game the most and the team that played another game the least
         rounds_played_each_team = np.sum(game_team_counts, axis=0) # total rounds played by each team
-        diff_rounds_played_each_team = np.amax(rounds_played_each_team) - np.amin(rounds_played_each_team) # difference between the team that played the most rounds and the team that played the least rounds
-        diff_team_matchups = max(team_matchups.values()) - min(team_matchups.values()) # difference between the team that had the most matchups with another team and the team that had the least matchups with another team
+        var_game_counts = np.var(list(game_counts.values())) # variance of game counts across all games
+        var_rounds_played_each_team = np.var(rounds_played_each_team) # variance of rounds played by each team
+        var_team_matchups = np.var(list(team_matchups.values())) # variance of team matchups across all pairs
+        var_game_team_counts = np.var(game_team_counts)  # variance of game counts for each team
 
-        cost_value = diff_game_counts + diff_game_team_counts*40 + diff_rounds_played_each_team + diff_team_matchups
+        cost_value = var_game_counts + var_game_team_counts*20 + var_rounds_played_each_team + var_team_matchups
 
         return cost_value, team_matchups, game_counts, game_team_counts
         
