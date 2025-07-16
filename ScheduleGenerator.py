@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import random
 
-from PySide6.QtWidgets import QProgressBar, QApplication
+from PySide6.QtWidgets import QApplication
 from typing import Callable
 
 
@@ -17,20 +17,23 @@ class ScheduleGenerator():
         games_names: list[str],
         progress_update_callback: Callable
     ):
-        self.jungscharen = jungscharen
-        self.n_games = n_games
-        self.game_names = games_names
-        self.n_rounds = n_rounds
+        self.jungscharen = jungscharen # List of Jungschar objects
+        self.n_games = n_games # Number of games
+        self.game_names = games_names # List of game names
+        self.n_rounds = n_rounds # Number of rounds
 
         self.progress_update_callback = progress_update_callback
 
-        self.n_teams = sum([js.n_groups for js in self.jungscharen])
+        self.n_teams = sum([js.n_groups for js in self.jungscharen]) # Total number of teams across all Jungscharen
         
         # Create teams with clear assignment to Jungscharen
-        self.team_names = []
+        self.team_names = [] # List of dictionaries with team information
         self.jungschar_teams = {}  # Maps jungschar_name -> list of team_numbers
         team_counter = 0
         
+        # Create a team for each group in each Jungschar
+        # Each team is represented as a dictionary with team_number, jungschar_name, jungschar_id, group_name, and group_id
+        # This allows for easy access to team information by team number or Jungschar name
         for js in self.jungscharen:
             jungschar_team_list = []
             for gr in js.groups:
@@ -85,7 +88,9 @@ class ScheduleGenerator():
             print()
 
 
-    def generate_schedule(self):        
+    def generate_schedule(self) -> tuple:
+        """Generate a schedule based on the provided parameters"""
+
         # init
         best_schedule = self.generate_random_schedule()
         best_cost, team_matchups, game_counts, game_team_counts = self.check_schedule(best_schedule)  # Get initial cost
@@ -181,6 +186,7 @@ class ScheduleGenerator():
 
 
     def generate_random_schedule(self) -> list:
+        """Generate a random schedule with the given parameters"""
         schedule = self.generate_round_robin_schedule()
 
         # Assign pairs of teams to games randomly
@@ -199,6 +205,7 @@ class ScheduleGenerator():
     
 
     def generate_round_robin_schedule(self) -> list:
+        """Generate a round-robin schedule for the teams, where only teams from different jungscharen play against each other"""
         # Generate schedule: only teams from different jungscharen play against each other
         # Use a proper round-robin algorithm with rotation to ensure variety
         
@@ -208,6 +215,8 @@ class ScheduleGenerator():
         schedule = []
         pairs_used = set()
         
+        # Iterate through the number of rounds
+        # For each round, try to find pairs of teams that haven't played against each other yet
         for round_num in range(self.n_rounds):
             round_schedule = []
             teams_used_this_round = set()
@@ -218,7 +227,7 @@ class ScheduleGenerator():
                 
                 # Check if this pair hasn't been used and neither team is already scheduled this round
                 if (pair not in pairs_used and 
-                    (team2, team1) not in pairs_used and 
+                    (team2, team1) not in pairs_used and # check both directions for uniqueness
                     team1 not in teams_used_this_round and 
                     team2 not in teams_used_this_round):
                     
@@ -226,8 +235,8 @@ class ScheduleGenerator():
                     pairs_used.add(pair)
                     teams_used_this_round.add(team1)
                     teams_used_this_round.add(team2)
-                    
-                    # Limit the number of games per round based on available games or teams
+
+                    # Limit the number of games per round based on available games or teams and end the round if reached
                     if len(round_schedule) >= min(self.n_games, self.n_teams // 2):
                         break
             
@@ -254,7 +263,8 @@ class ScheduleGenerator():
 
         return schedule
 
-    def check_schedule(self, schedule: list):
+    def check_schedule(self, schedule: list) -> tuple:
+        """Check the schedule for balance and return a cost value"""
         # count how many times each team played against each other
         team_matchups = {(team1, team2): 0 for team1 in range(self.n_teams) for team2 in range(team1 + 1, self.n_teams)}
 
@@ -268,18 +278,18 @@ class ScheduleGenerator():
                 team1 = game[1]
                 team2 = game[2]
 
-                game_counts[game_number] += 1
-                game_team_counts[game_number, team1] += 1
-                game_team_counts[game_number, team2] += 1
-                if team1 > team2:
+                game_counts[game_number] += 1 # count how many times this game was played
+                game_team_counts[game_number, team1] += 1 # count how many times this team played this game
+                game_team_counts[game_number, team2] += 1 # count how many times this team played this game
+                if team1 > team2:   # sort teams to ensure smallest team number is first
                     team1, team2 = team2, team1
-                team_matchups[(team1, team2)] += 1
+                team_matchups[(team1, team2)] += 1 # count how many times this matchup was played
 
-        diff_game_counts = max(game_counts.values()) - min(game_counts.values())
-        diff_game_team_counts = np.amax(game_team_counts) - np.amin(game_team_counts)
-        rounds_played_each_team = np.sum(game_team_counts, axis=0)
-        diff_rounds_played_each_team = np.amax(rounds_played_each_team) - np.amin(rounds_played_each_team)
-        diff_team_matchups = max(team_matchups.values()) - min(team_matchups.values())
+        diff_game_counts = max(game_counts.values()) - min(game_counts.values()) # difference between the most and least played games
+        diff_game_team_counts = np.amax(game_team_counts) - np.amin(game_team_counts) # difference between the team that played one game the most and the team that played another game the least
+        rounds_played_each_team = np.sum(game_team_counts, axis=0) # total rounds played by each team
+        diff_rounds_played_each_team = np.amax(rounds_played_each_team) - np.amin(rounds_played_each_team) # difference between the team that played the most rounds and the team that played the least rounds
+        diff_team_matchups = max(team_matchups.values()) - min(team_matchups.values()) # difference between the team that had the most matchups with another team and the team that had the least matchups with another team
 
         cost_value = diff_game_counts + diff_game_team_counts*40 + diff_rounds_played_each_team + diff_team_matchups
 

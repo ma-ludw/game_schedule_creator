@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessageBox
 
 import sys
 import pandas as pd
@@ -9,7 +9,7 @@ from ScheduleGenerator import ScheduleGenerator
 
 
 
-
+debug = False
 
 class Window(QMainWindow):
     def __init__(self):
@@ -112,15 +112,22 @@ class Window(QMainWindow):
 
 
     def generate(self):
-        schedulegenerator = ScheduleGenerator(
-            self.jungscharen,
-            self.n_rounds,
-            len(self.game_names),
-            self.game_names,
-            progress_update_callback=self.ui.progressBar_generate.setValue
-        )
-        schedule, game_counts, team_matchups, game_team_counts = schedulegenerator.generate_schedule()
-        print(schedule)
+        try:
+            schedulegenerator = ScheduleGenerator(
+                self.jungscharen,
+                self.n_rounds,
+                len(self.game_names),
+                self.game_names,
+                progress_update_callback=self.ui.progressBar_generate.setValue
+            )
+            schedule, game_counts, team_matchups, game_team_counts = schedulegenerator.generate_schedule()
+            print(schedule)
+        except Exception as e:
+            if debug:
+                raise e  # re-raise the exception for debugging
+            else:
+                QMessageBox.critical(self, "Error", f"An error occurred while generating the schedule: {e}")
+            return
         
         # Save schedule to Excel file
         with pd.ExcelWriter('schedule.xlsx') as writer:
