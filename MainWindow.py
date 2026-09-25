@@ -32,18 +32,30 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         self.gridLayout_2 = QGridLayout(self.centralwidget)
         self.gridLayout_2.setObjectName(u"gridLayout_2")
+        self.gridLayout_2.setContentsMargins(24, 18, 24, 18)
+        self.gridLayout_2.setSpacing(12)
+
+        self.titleLabel = QLabel(self.centralwidget)
+        self.titleLabel.setObjectName(u"titleLabel")
+        self.titleLabel.setStyleSheet(u"font-size: 24px; font-weight: 700; color: #f8fafc;")
+
+        self.gridLayout_2.addWidget(self.titleLabel, 0, 0, 1, 1)
+
+        self.subtitleLabel = QLabel(self.centralwidget)
+        self.subtitleLabel.setObjectName(u"subtitleLabel")
+        self.subtitleLabel.setStyleSheet(u"font-size: 12px; color: #94a3b8; margin-bottom: 4px;")
+
+        self.gridLayout_2.addWidget(self.subtitleLabel, 1, 0, 1, 1)
+
         self.progressBar_generate = QProgressBar(self.centralwidget)
         self.progressBar_generate.setObjectName(u"progressBar_generate")
         self.progressBar_generate.setValue(0)
 
-        self.gridLayout_2.addWidget(self.progressBar_generate, 3, 0, 1, 1)
-
         self.pushButton_generate = QPushButton(self.centralwidget)
         self.pushButton_generate.setObjectName(u"pushButton_generate")
 
-        self.gridLayout_2.addWidget(self.pushButton_generate, 2, 0, 1, 1)
-
         self.gridLayout = QGridLayout()
+        self.gridLayout.setContentsMargins(0, 4, 0, 0)
         self.gridLayout.setObjectName(u"gridLayout")
         self.gridLayout.setHorizontalSpacing(6)
         self.tableWidget_n_groups = QTableWidget(self.centralwidget)
@@ -144,7 +156,10 @@ class Ui_MainWindow(object):
         self.gridLayout.addWidget(self.tableWidget_game_names, 2, 2, 1, 1)
 
 
-        self.gridLayout_2.addLayout(self.gridLayout, 1, 0, 1, 1)
+        self.gridLayout_2.addLayout(self.gridLayout, 2, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.pushButton_generate, 3, 0, 1, 1)
+        self.gridLayout_2.addWidget(self.progressBar_generate, 4, 0, 1, 1)
+        self.gridLayout_2.setRowStretch(2, 1)
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
@@ -165,6 +180,8 @@ class Ui_MainWindow(object):
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"MainWindow", None))
         self.actionDokumentation.setText(QCoreApplication.translate("MainWindow", u"Dokumentation", None))
+        self.titleLabel.setText(QCoreApplication.translate("MainWindow", u"Spielplan konfigurieren", None))
+        self.subtitleLabel.setText(QCoreApplication.translate("MainWindow", u"Lege Gruppen, Spiele und Runden fest und generiere anschließend den Spielplan.", None))
         self.pushButton_generate.setText(QCoreApplication.translate("MainWindow", u"Spielplan generieren", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"Anzahl Gruppen", None))
         self.label_4.setText(QCoreApplication.translate("MainWindow", u"Anzahl Runden", None))

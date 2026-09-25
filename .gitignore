@@ -4,5 +4,4 @@ __pycache__/
 
 # exclude executable build files
 /build/
-*.spec
 /dist/
