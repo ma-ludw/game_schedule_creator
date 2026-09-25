@@ -1,5 +1,6 @@
 import os
 import random
+import time
 from concurrent.futures import ProcessPoolExecutor, FIRST_COMPLETED, wait
 from multiprocessing import Manager
 from typing import Callable, Literal, NamedTuple, TypedDict, overload
@@ -10,7 +11,7 @@ import pandas as pd
 from Jungschar import Jungschar
 
 
-DEFAULT_SEARCH_ATTEMPTS = 1_000_000
+DEFAULT_SEARCH_ATTEMPTS = 10_000_000
 SEARCH_BATCHES_PER_WORKER = 2
 PROGRESS_REPORT_INTERVAL = 1_000
 
@@ -39,7 +40,17 @@ DetailedMetrics = tuple[float, dict[Matchup, int], dict[int, int], np.ndarray]
 
 def _search_schedule_batch(payload):
     """Search one independent batch in a worker process."""
-    jungscharen, n_rounds, n_games, game_names, attempts, seed, batch_id, progress_queue = payload
+    (
+        jungscharen,
+        n_rounds,
+        n_games,
+        game_names,
+        attempts,
+        deadline,
+        seed,
+        batch_id,
+        progress_queue,
+    ) = payload
     random.seed(seed)
     generator = ScheduleGenerator(
         jungscharen,
@@ -52,10 +63,30 @@ def _search_schedule_batch(payload):
     def report_progress(completed, best_cost):
         progress_queue.put((batch_id, completed, best_cost))
 
-    return generator._find_best_schedule(attempts, progress_callback=report_progress)
+    return generator._find_best_schedule(
+        attempts,
+        deadline=deadline,
+        progress_callback=report_progress,
+    )
 
 
 class ScheduleGenerator:
+
+    @staticmethod
+    def _merge_batch_progress(
+        batch_progress: dict[int, tuple[int, float]],
+        batch_id: int,
+        completed_attempts: int,
+        cost: float,
+    ) -> None:
+        previous_attempts, previous_cost = batch_progress.get(
+            batch_id,
+            (0, cost),
+        )
+        batch_progress[batch_id] = (
+            max(previous_attempts, completed_attempts),
+            min(previous_cost, cost),
+        )
 
     def __init__(
         self,
@@ -67,7 +98,10 @@ class ScheduleGenerator:
         cancellation_callback: Callable[[], bool] | None = None,
         status_update_callback: Callable[[str], None] | None = None,
         parallel_workers: int | None = None,
+        time_limit_seconds: int | None = None,
     ) -> None:
+        if time_limit_seconds is not None and time_limit_seconds < 1:
+            raise ValueError("time_limit_seconds must be at least 1")
         self.jungscharen = jungscharen
         self.n_games = n_games
         self.game_names = games_names
@@ -75,6 +109,8 @@ class ScheduleGenerator:
         self.progress_update_callback = progress_update_callback
         self.cancellation_callback = cancellation_callback
         self.status_update_callback = status_update_callback
+        self.time_limit_seconds = time_limit_seconds
+        self._search_started_at: float | None = None
         self.parallel_workers = max(
             1,
             parallel_workers if parallel_workers is not None else (os.cpu_count() or 1),
@@ -182,48 +218,83 @@ class ScheduleGenerator:
 
     def _find_best_schedule(
         self,
-        attempts: int,
+        attempts: int | None,
+        deadline: float | None = None,
         progress_callback: Callable[[int, float], None] | None = None,
     ) -> tuple[Schedule, float]:
+        if attempts is None and deadline is None:
+            raise ValueError("A deadline is required when attempts is unlimited")
         best_schedule = self.generate_random_schedule()
         best_cost = self.check_schedule(best_schedule, include_details=False)
         completed = 1
-        for _ in range(max(0, attempts - 1)):
+        while attempts is None or completed < attempts:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
             candidate = self.generate_random_schedule()
             cost = self.check_schedule(candidate, include_details=False)
             if cost < best_cost:
                 best_schedule = candidate
                 best_cost = cost
-                if cost < 0.01:
+                if deadline is None and cost < 0.01:
                     break
             completed += 1
             if progress_callback and (
-                completed % PROGRESS_REPORT_INTERVAL == 0 or completed == attempts
+                completed % PROGRESS_REPORT_INTERVAL == 0
+                or completed == attempts
             ):
                 progress_callback(completed, best_cost)
-        if progress_callback and completed == 1:
+        if progress_callback and (completed == 1 or deadline is not None):
             progress_callback(completed, best_cost)
         return best_schedule, best_cost
 
     def _find_best_parallel(self) -> tuple[Schedule, float]:
-        worker_count = min(self.parallel_workers, max(1, self.n_tries))
-        batch_count = worker_count * SEARCH_BATCHES_PER_WORKER
-        base_attempts = self.n_tries // batch_count
-        remainder = self.n_tries % batch_count
+        time_limit_seconds = self.time_limit_seconds
+        timed_search = time_limit_seconds is not None
+        worker_count = (
+            self.parallel_workers
+            if timed_search
+            else min(self.parallel_workers, max(1, self.n_tries))
+        )
+        batch_count = (
+            worker_count
+            if timed_search
+            else worker_count * SEARCH_BATCHES_PER_WORKER
+        )
+        deadline = None
+        if timed_search:
+            self._search_started_at = time.monotonic()
+            deadline = self._search_started_at + time_limit_seconds
+            batch_attempts = [None] * batch_count
+        else:
+            base_attempts = self.n_tries // batch_count
+            remainder = self.n_tries % batch_count
+            batch_attempts = [
+                base_attempts + (1 if batch_index < remainder else 0)
+                for batch_index in range(batch_count)
+            ]
         payloads = []
-        for batch_index in range(batch_count):
-            attempts = base_attempts + (1 if batch_index < remainder else 0)
-            if attempts:
+        for attempts in batch_attempts:
+            if attempts is None or attempts > 0:
                 payloads.append((
                     self.jungscharen,
                     self.n_rounds,
                     self.n_games,
                     self.game_names,
                     attempts,
+                    deadline,
                     random.randrange(2**32),
                 ))
 
         if worker_count == 1:
+            if timed_search:
+                return self._find_best_schedule(
+                    None,
+                    deadline=deadline,
+                    progress_callback=lambda completed, cost: self._notify_progress(
+                        completed,
+                        cost,
+                    ),
+                )
             return self._find_best_schedule(self.n_tries)
 
         best_result = None
@@ -253,7 +324,12 @@ class ScheduleGenerator:
                     finished, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
                     while not progress_queue.empty():
                         batch_id, completed, cost = progress_queue.get()
-                        batch_progress[batch_id] = (completed, cost)
+                        self._merge_batch_progress(
+                            batch_progress,
+                            batch_id,
+                            completed,
+                            cost,
+                        )
                         completed_attempts = sum(value[0] for value in batch_progress.values())
                         best_cost = min(
                             (value[1] for value in batch_progress.values()),
@@ -264,11 +340,19 @@ class ScheduleGenerator:
                     for future in finished:
                         schedule, cost = future.result()
                         batch_id = future_batches[future]
-                        batch_progress[batch_id] = (future_attempts[future], cost)
+                        self._merge_batch_progress(
+                            batch_progress,
+                            batch_id,
+                            future_attempts[future] or 0,
+                            cost,
+                        )
                         completed_attempts = sum(value[0] for value in batch_progress.values())
                         if best_result is None or cost < best_result[1]:
                             best_result = (schedule, cost)
-                        self._notify_progress(completed_attempts, best_result[1])
+                        best_cost = min(
+                            value[1] for value in batch_progress.values()
+                        )
+                        self._notify_progress(completed_attempts, best_cost)
         finally:
             manager.shutdown()
 
@@ -278,13 +362,28 @@ class ScheduleGenerator:
 
     def _notify_progress(self, completed_attempts: int, best_cost: float | None) -> None:
         if self.progress_update_callback:
-            percentage = int(completed_attempts / self.n_tries * 100)
+            if self.time_limit_seconds is not None and self._search_started_at is not None:
+                elapsed = time.monotonic() - self._search_started_at
+                percentage = min(
+                    99,
+                    int(elapsed / self.time_limit_seconds * 100),
+                )
+            else:
+                percentage = int(completed_attempts / self.n_tries * 100)
             self.progress_update_callback(percentage)
         if self.status_update_callback and best_cost is not None:
-            self.status_update_callback(
-                f"{completed_attempts:,} von {self.n_tries:,} Versuchen abgeschlossen · "
-                f"Qualitätswert: {best_cost:.4f} (je niedriger, desto besser)"
-            )
+            if self.time_limit_seconds is not None and self._search_started_at is not None:
+                elapsed = time.monotonic() - self._search_started_at
+                status = (
+                    f"Suchzeit: {elapsed:.1f} / {self.time_limit_seconds} s · "
+                    f"Qualitätswert: {best_cost:.4f} (je niedriger, desto besser)"
+                )
+            else:
+                status = (
+                    f"{completed_attempts:,} von {self.n_tries:,} Versuchen abgeschlossen · "
+                    f"Qualitätswert: {best_cost:.4f} (je niedriger, desto besser)"
+                )
+            self.status_update_callback(status)
 
     def convert_schedule_to_names(self, schedule: Schedule) -> pd.DataFrame:
         """Convert scheduled team IDs into a round-by-game table."""
@@ -475,8 +574,8 @@ class ScheduleGenerator:
         game_team_variance = np.var(game_team_counts)
         cost_value = float(
             game_count_variance
-            + game_team_variance * 20
-            + team_round_variance
+            + game_team_variance * 10
+            + team_round_variance * 10
             + matchup_variance
         )
         if not include_details:
