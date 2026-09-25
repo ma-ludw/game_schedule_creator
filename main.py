@@ -1,4 +1,5 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessageBox, QFileDialog
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QMessageBox, QFileDialog, QHeaderView
 
 import sys
 import pandas as pd
@@ -8,8 +9,8 @@ from Jungschar import Jungschar
 from ScheduleGenerator import ScheduleGenerator
 
 
-
 debug = False
+
 
 class Window(QMainWindow):
     def __init__(self):
@@ -18,6 +19,9 @@ class Window(QMainWindow):
         # init window
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.setWindowTitle("Spielplan Generator")
+        self.setMinimumSize(1100, 700)
+        self._apply_user_friendly_style()
 
         # init control elements
         self.ui.spinBox_n_jungscharen.valueChanged.connect(self.n_jungscharen_changed)
@@ -27,7 +31,6 @@ class Window(QMainWindow):
         self.ui.spinBox_n_games.valueChanged.connect(self.n_games_changed)
         self.ui.tableWidget_game_names.itemChanged.connect(self.game_names_changed)
         self.ui.spinBox_n_rounds.valueChanged.connect(self.n_rounds_changed)
-    
 
         self.ui.tableWidget_n_groups.setColumnCount(2)
         self.ui.tableWidget_n_groups.setHorizontalHeaderLabels(["Jungschar Name", "Anzahl Gruppen"])
@@ -35,22 +38,111 @@ class Window(QMainWindow):
         self.ui.tableWidget_group_names_jungscharen.setHorizontalHeaderLabels(["Jungschar Name", "Gruppen Name"])
         self.ui.tableWidget_game_names.setColumnCount(1)
         self.ui.tableWidget_game_names.setHorizontalHeaderLabels(["Spielname"])
-        
+
+        self._configure_table(self.ui.tableWidget_n_groups)
+        self._configure_table(self.ui.tableWidget_group_names_jungscharen)
+        self._configure_table(self.ui.tableWidget_game_names)
 
         # init variables
         self.jungscharen: list[Jungschar] = [Jungschar(0, 1)]
         self.n_jungscharen_changed(self.ui.spinBox_n_jungscharen.value())
         self.game_names = []
-        self.n_rounds =  self.ui.spinBox_n_rounds.value()
-
+        self.n_rounds = self.ui.spinBox_n_rounds.value()
 
         # disable group naming function
         self.ui.tableWidget_group_names_jungscharen.setEnabled(False)
 
-
+        self.ui.pushButton_generate.setDefault(True)
+        self.ui.pushButton_generate.setCursor(Qt.PointingHandCursor)
 
         # show Main Window
         self.show()
+
+    def _apply_user_friendly_style(self):
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background: #f4f7fb;
+                color: #1f2937;
+            }
+            QWidget {
+                color: #1f2937;
+            }
+            QLabel {
+                font-size: 13px;
+                font-weight: 600;
+                color: #334155;
+                padding: 4px 0px;
+            }
+            QSpinBox, QTableWidget {
+                background: #ffffff;
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                padding: 6px 8px;
+                selection-background-color: #bfdbfe;
+                selection-color: #0f172a;
+            }
+            QSpinBox:focus, QTableWidget:focus {
+                border: 1px solid #60a5fa;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563eb, stop:1 #1d4ed8);
+                border: none;
+                border-radius: 10px;
+                color: #ffffff;
+                font-size: 14px;
+                font-weight: 700;
+                min-height: 40px;
+                padding: 0 20px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3b82f6, stop:1 #2563eb);
+            }
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1d4ed8, stop:1 #1e40af);
+            }
+            QProgressBar {
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                background: #e2e8f0;
+                text-align: center;
+                color: #0f172a;
+                font-weight: 600;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #34d399, stop:1 #10b981);
+                border-radius: 7px;
+            }
+            QHeaderView::section {
+                background: #e2e8f0;
+                color: #0f172a;
+                font-weight: 700;
+                padding: 8px 10px;
+                border: 1px solid #cbd5e1;
+            }
+            QTableWidget {
+                gridline-color: #dbeafe;
+                alternate-background-color: #f8fafc;
+            }
+            QTableWidget::item {
+                padding: 8px 6px;
+            }
+            QTableWidget::item:selected {
+                background: #dbeafe;
+                color: #0f172a;
+            }
+            """
+        )
+
+    def _configure_table(self, table):
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
+        table.setSelectionMode(table.SelectionMode.SingleSelection)
+        table.setEditTriggers(table.EditTrigger.DoubleClicked | table.EditTrigger.EditKeyPressed)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
 
     def n_jungscharen_changed(self, n_jungscharen: int):
         self.ui.tableWidget_n_groups.setRowCount(n_jungscharen)
