@@ -87,6 +87,14 @@ class ScheduleGenerator():
                 print(f"  Team {team_num}: {team_info['group_name']}")
             print()
 
+    def _format_team_name(self, team_info: dict | None) -> str:
+        """Return the export name for a team, omitting the group suffix for single groups."""
+        if team_info is None:
+            return "Unknown"
+        if len(self.jungschar_teams.get(team_info["jungschar_name"], [])) == 1:
+            return team_info["jungschar_name"]
+        return f"{team_info['jungschar_name']}.{team_info['group_name']}"
+
 
     def generate_schedule(self) -> tuple:
         """Generate a schedule based on the provided parameters"""
@@ -142,8 +150,8 @@ class ScheduleGenerator():
                 game_number, team1, team2 = game
                 team1_info = self.team_lookup.get(team1)
                 team2_info = self.team_lookup.get(team2)
-                team1_name = f"{team1_info['jungschar_name']}.{team1_info['group_name']}" if team1_info else "Unknown"
-                team2_name = f"{team2_info['jungschar_name']}.{team2_info['group_name']}" if team2_info else "Unknown"
+                team1_name = self._format_team_name(team1_info)
+                team2_name = self._format_team_name(team2_info)
                 matchup = f"{team1_name} vs {team2_name}"
                 row[self.game_names[game_number]] = matchup
             # Fill missing games with empty string
@@ -162,8 +170,8 @@ class ScheduleGenerator():
         for (team1, team2), count in team_matchups.items():
             team1_info = self.team_lookup.get(team1)
             team2_info = self.team_lookup.get(team2)
-            team1_name = f"{team1_info['jungschar_name']}.{team1_info['group_name']}" if team1_info else "Unknown"
-            team2_name = f"{team2_info['jungschar_name']}.{team2_info['group_name']}" if team2_info else "Unknown"
+            team1_name = self._format_team_name(team1_info)
+            team2_name = self._format_team_name(team2_info)
             data.append({"Team 1": team1_name, "Team 2": team2_name, "Count": count})
         return pd.DataFrame(data)
     
@@ -177,7 +185,7 @@ class ScheduleGenerator():
     def convert_game_team_counts_to_names(self, game_team_counts: np.ndarray) -> pd.DataFrame:
         # Create a DataFrame where rows are games and columns are team names, values are counts
         team_names = [
-            f"{team['jungschar_name']}.{team['group_name']}" if team else f"Team {idx}"
+            self._format_team_name(team) if team else f"Team {idx}"
             for idx, team in enumerate(self.team_names)
         ]
         game_names = [
@@ -299,4 +307,3 @@ class ScheduleGenerator():
 
         return cost_value, team_matchups, game_counts, game_team_counts
         
-
