@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from Jungschar import Jungschar
+from gpu_schedule_search import OpenCLScheduleSearch, OpenCLUnavailableError
 
 
 DEFAULT_SEARCH_ATTEMPTS = 10_000_000
@@ -67,7 +68,7 @@ def _search_schedule_batch(payload):
         attempts,
         deadline=deadline,
         progress_callback=report_progress,
-    )
+    ) + (generator.total_tries,)
 
 
 class ScheduleGenerator:
@@ -99,6 +100,7 @@ class ScheduleGenerator:
         status_update_callback: Callable[[str], None] | None = None,
         parallel_workers: int | None = None,
         time_limit_seconds: int | None = None,
+        use_gpu: bool = True,
     ) -> None:
         if time_limit_seconds is not None and time_limit_seconds < 1:
             raise ValueError("time_limit_seconds must be at least 1")
@@ -110,6 +112,8 @@ class ScheduleGenerator:
         self.cancellation_callback = cancellation_callback
         self.status_update_callback = status_update_callback
         self.time_limit_seconds = time_limit_seconds
+        self.use_gpu = use_gpu
+        self.backend_name = "CPU"
         self._search_started_at: float | None = None
         self.parallel_workers = max(
             1,
@@ -120,6 +124,7 @@ class ScheduleGenerator:
         self.jungschar_teams_lists = list(self.jungschar_teams.values())
         self.all_possible_pairs = self._build_possible_matchups()
         self.n_tries = DEFAULT_SEARCH_ATTEMPTS
+        self.total_tries = 0
         self.team_lookup = {team["team_number"]: team for team in self.team_names}
 
     def _build_team_roster(self) -> tuple[list[TeamInfo], dict[str, list[int]]]:
@@ -192,7 +197,8 @@ class ScheduleGenerator:
             self.progress_update_callback(100)
         if self.status_update_callback:
             self.status_update_callback(
-                f"Parallele Generierung abgeschlossen · Qualitätswert: {best_cost:.4f} "
+                f"Generierung abgeschlossen ({self.backend_name}) · "
+                f"Qualitätswert: {best_cost:.4f} "
                 f"(je niedriger, desto besser)"
             )
 
@@ -207,6 +213,8 @@ class ScheduleGenerator:
         print("Game team counts:")
         for game_number, counts in enumerate(game_team_counts, start=1):
             print(f"  Game {game_number}: {dict(enumerate(counts, start=1))}")
+
+        print(f"Total tries: {self.total_tries:,}")
 
         return ScheduleResult(
             self.convert_schedule_to_names(best_schedule),
@@ -245,11 +253,51 @@ class ScheduleGenerator:
                 progress_callback(completed, best_cost)
         if progress_callback and (completed == 1 or deadline is not None):
             progress_callback(completed, best_cost)
+        self.total_tries = completed
         return best_schedule, best_cost
 
     def _find_best_parallel(self) -> tuple[Schedule, float]:
         time_limit_seconds = self.time_limit_seconds
         timed_search = time_limit_seconds is not None
+        if self.use_gpu:
+            try:
+                if self.status_update_callback:
+                    self.status_update_callback("OpenCL-GPU wird initialisiert …")
+                gpu_search = OpenCLScheduleSearch(
+                    self.all_possible_pairs,
+                    self.n_teams,
+                    self.n_games,
+                    self.n_rounds,
+                )
+            except OpenCLUnavailableError as error:
+                self.backend_name = "CPU (OpenCL nicht verfügbar)"
+                if self.status_update_callback:
+                    self.status_update_callback(
+                        f"{error} Die Generierung wird auf der CPU fortgesetzt."
+                    )
+            else:
+                self.backend_name = f"OpenCL-GPU: {gpu_search.device.name.strip()}"
+                self._search_started_at = time.monotonic()
+                deadline = (
+                    self._search_started_at + time_limit_seconds
+                    if timed_search
+                    else None
+                )
+                if self.status_update_callback:
+                    self.status_update_callback(
+                        f"Suche auf {self.backend_name} gestartet."
+                    )
+                result = gpu_search.search(
+                    deadline=deadline,
+                    max_candidates=None if timed_search else self.n_tries,
+                    cancellation_requested=(
+                        self.cancellation_callback or (lambda: False)
+                    ),
+                    progress_callback=self._notify_progress,
+                )
+                self.total_tries = gpu_search.completed_candidates
+                return result
+
         worker_count = (
             self.parallel_workers
             if timed_search
@@ -338,15 +386,16 @@ class ScheduleGenerator:
                         self._notify_progress(completed_attempts, best_cost)
 
                     for future in finished:
-                        schedule, cost = future.result()
+                        schedule, cost, attempts = future.result()
                         batch_id = future_batches[future]
                         self._merge_batch_progress(
                             batch_progress,
                             batch_id,
-                            future_attempts[future] or 0,
+                            attempts,
                             cost,
                         )
                         completed_attempts = sum(value[0] for value in batch_progress.values())
+                        self.total_tries = completed_attempts
                         if best_result is None or cost < best_result[1]:
                             best_result = (schedule, cost)
                         best_cost = min(

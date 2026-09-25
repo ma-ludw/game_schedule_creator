@@ -1,5 +1,8 @@
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import math
 import time
 import unittest
 
@@ -8,6 +11,7 @@ import pandas as pd
 from application_window import Window
 from Jungschar import Jungschar
 from ScheduleGenerator import ScheduleGenerator
+from gpu_schedule_search import OpenCLScheduleSearch, OpenCLUnavailableError
 
 
 class ScheduleGeneratorTests(unittest.TestCase):
@@ -62,6 +66,86 @@ class ScheduleGeneratorTests(unittest.TestCase):
 
         self.assertGreaterEqual(elapsed, 0.05)
         self.assertLess(elapsed, 1.0)
+
+    def test_cpu_search_can_be_selected_explicitly(self) -> None:
+        generator = ScheduleGenerator(
+            self.generator.jungscharen,
+            n_rounds=3,
+            n_games=2,
+            games_names=["Fangen", "Staffel"],
+            parallel_workers=1,
+            use_gpu=False,
+        )
+        generator.n_tries = 8
+
+        schedule, cost = generator._find_best_parallel()
+
+        self.assertEqual(generator.backend_name, "CPU")
+        self.assertTrue(math.isfinite(cost))
+        self.assertEqual(len(schedule), 3)
+
+    def test_schedule_generation_prints_actual_total_tries(self) -> None:
+        generator = ScheduleGenerator(
+            self.generator.jungscharen,
+            n_rounds=3,
+            n_games=2,
+            games_names=["Fangen", "Staffel"],
+            parallel_workers=1,
+            use_gpu=False,
+        )
+        generator.n_tries = 8
+        output = StringIO()
+
+        with redirect_stdout(output):
+            generator.generate_schedule()
+
+        self.assertGreaterEqual(generator.total_tries, 1)
+        self.assertIn(
+            f"Total tries: {generator.total_tries:,}",
+            output.getvalue(),
+        )
+
+    def test_opencl_search_generates_valid_schedule_when_gpu_is_available(self) -> None:
+        try:
+            gpu_search = OpenCLScheduleSearch(
+                self.generator.all_possible_pairs,
+                self.generator.n_teams,
+                self.generator.n_games,
+                self.generator.n_rounds,
+            )
+        except OpenCLUnavailableError as error:
+            self.skipTest(str(error))
+
+        progress_reports = []
+        schedule, cost = gpu_search.search(
+            deadline=time.monotonic() + 5,
+            max_candidates=16,
+            cancellation_requested=lambda: False,
+            progress_callback=lambda completed, best_cost: progress_reports.append(
+                (completed, best_cost)
+            ),
+        )
+
+        self.assertTrue(math.isfinite(cost))
+        self.assertEqual(progress_reports[-1][0], 16)
+        self.assertAlmostEqual(
+            cost,
+            self.generator.check_schedule(schedule, include_details=False),
+            places=4,
+        )
+        self.assertEqual(len(schedule), self.generator.n_rounds)
+        for round_games in schedule:
+            teams = [
+                team
+                for _, first_team, second_team in round_games
+                for team in (first_team, second_team)
+            ]
+            self.assertEqual(len(teams), len(set(teams)))
+            for _, first_team, second_team in round_games:
+                self.assertNotEqual(
+                    self.generator.get_jungschar_by_team(first_team),
+                    self.generator.get_jungschar_by_team(second_team),
+                )
 
     def test_schedule_generation_returns_all_report_tables(self) -> None:
         results = self.generator.generate_schedule()
