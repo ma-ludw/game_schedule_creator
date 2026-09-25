@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 import sys
+from multiprocessing import freeze_support
 import pandas as pd
 
 from MainWindow import Ui_MainWindow
@@ -644,4 +645,5 @@ def main():
 
 
 if __name__ == "__main__":
+    freeze_support()
     main()

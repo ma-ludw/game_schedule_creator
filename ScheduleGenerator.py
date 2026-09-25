@@ -2,9 +2,28 @@ from Jungschar import Jungschar
 import pandas as pd
 import numpy as np
 import random
-import time
+import os
+from concurrent.futures import ProcessPoolExecutor, FIRST_COMPLETED, wait
+from multiprocessing import Manager
 
 from typing import Callable
+
+
+def _search_schedule_batch(payload):
+    """Search one independent batch in a worker process."""
+    jungscharen, n_rounds, n_games, game_names, attempts, seed, batch_id, progress_queue = payload
+    random.seed(seed)
+    generator = ScheduleGenerator(
+        jungscharen,
+        n_rounds,
+        n_games,
+        game_names,
+        progress_update_callback=None,
+    )
+    def report_progress(completed, best_cost):
+        progress_queue.put((batch_id, completed, best_cost))
+
+    return generator._find_best_schedule(attempts, progress_callback=report_progress)
 
 
 class ScheduleGenerator():
@@ -18,6 +37,7 @@ class ScheduleGenerator():
         progress_update_callback: Callable,
         cancellation_callback: Callable[[], bool] | None = None,
         status_update_callback: Callable[[str], None] | None = None,
+        parallel_workers: int | None = None,
     ):
         self.jungscharen = jungscharen # List of Jungschar objects
         self.n_games = n_games # Number of games
@@ -27,6 +47,10 @@ class ScheduleGenerator():
         self.progress_update_callback = progress_update_callback
         self.cancellation_callback = cancellation_callback
         self.status_update_callback = status_update_callback
+        self.parallel_workers = max(
+            1,
+            parallel_workers if parallel_workers is not None else (os.cpu_count() or 1),
+        )
 
         self.n_teams = sum([js.n_groups for js in self.jungscharen]) # Total number of teams across all Jungscharen
         
@@ -103,62 +127,18 @@ class ScheduleGenerator():
     def generate_schedule(self) -> tuple:
         """Generate a schedule based on the provided parameters"""
 
-        # init
-        best_schedule = self.generate_random_schedule()
-        best_cost = self.check_schedule(best_schedule, include_details=False)
-        initial_cost = best_cost
-        tries = 1
-
-        self.progress_update_callback(0)
-        started_at = time.monotonic()
-        if self.status_update_callback:
-            self.status_update_callback(
-                f"Startplan bewertet · aktueller Qualitätswert: {best_cost:.4f} "
-                f"(je niedriger, desto besser)"
-            )
-        cancelled = False
-        for _ in range(self.n_tries):
-            if self.cancellation_callback and self.cancellation_callback():
-                cancelled = True
-                break
-            random_schedule = self.generate_random_schedule()
-            cost = self.check_schedule(random_schedule, include_details=False)
-            if cost < best_cost:
-                print(f"New best schedule found after {tries} tries with cost {cost}")
-                best_schedule = random_schedule
-                best_cost = cost
-                if cost < 0.01:
-                    print(f"Found a perfect schedule after {tries} tries!")
-                    self.progress_update_callback(100)
-                    if self.status_update_callback:
-                        self.status_update_callback(
-                            f"Perfekter Plan gefunden · Qualitätswert: {best_cost:.4f}"
-                        )
-                    break
-            tries += 1
-            if self.progress_update_callback and tries % 1000 == 0:  # Update every 1000 iterations to avoid too frequent updates
-                progress = int((tries / self.n_tries) * 100)
-                self.progress_update_callback(progress)
-                if self.status_update_callback:
-                    elapsed = time.monotonic() - started_at
-                    rate = tries / elapsed if elapsed > 0 else 0
-                    remaining = (self.n_tries - tries) / rate if rate > 0 else 0
-                    self.status_update_callback(
-                        f"Versuch {tries:,} von {self.n_tries:,} · "
-                        f"{elapsed:.0f} s vergangen · ca. {remaining:.0f} s verbleibend · "
-                        f"Qualitätswert: {best_cost:.4f} (je niedriger, desto besser)"
-                    )
-
-        if cancelled and self.status_update_callback:
-            self.status_update_callback(
-                f"Nach Versuch {tries:,} abgebrochen · Qualitätswert: {best_cost:.4f} · "
-                f"Ergebnis wird gespeichert."
-            )
-
+        best_schedule, best_cost = self._find_best_parallel()
         _, best_team_matchups, best_game_counts, best_game_team_counts = self.check_schedule(
             best_schedule,
             include_details=True,
         )
+
+        self.progress_update_callback(100)
+        if self.status_update_callback:
+            self.status_update_callback(
+                f"Parallele Generierung abgeschlossen · Qualitätswert: {best_cost:.4f} "
+                f"(je niedriger, desto besser)"
+            )
 
         print("Team matchups:")
         for teams, count in best_team_matchups.items():
@@ -180,6 +160,108 @@ class ScheduleGenerator():
             self.convert_game_team_counts_to_names(best_game_team_counts),
             self.convert_team_game_totals_to_names(best_game_team_counts),
         )
+
+    def _find_best_schedule(self, attempts: int, progress_callback=None):
+        best_schedule = self.generate_random_schedule()
+        best_cost = self.check_schedule(best_schedule, include_details=False)
+        completed = 1
+        for _ in range(max(0, attempts - 1)):
+            candidate = self.generate_random_schedule()
+            cost = self.check_schedule(candidate, include_details=False)
+            if cost < best_cost:
+                best_schedule = candidate
+                best_cost = cost
+                if cost < 0.01:
+                    break
+            completed += 1
+            if progress_callback and (completed % 1000 == 0 or completed == attempts):
+                progress_callback(completed, best_cost)
+        if progress_callback and completed == 1:
+            progress_callback(completed, best_cost)
+        return best_schedule, best_cost
+
+    def _find_best_parallel(self):
+        worker_count = min(self.parallel_workers, max(1, self.n_tries))
+        batch_count = worker_count * 2
+        base_attempts = self.n_tries // batch_count
+        remainder = self.n_tries % batch_count
+        payloads = []
+        for batch_index in range(batch_count):
+            attempts = base_attempts + (1 if batch_index < remainder else 0)
+            if attempts:
+                payloads.append((
+                    self.jungscharen,
+                    self.n_rounds,
+                    self.n_games,
+                    self.game_names,
+                    attempts,
+                    random.randrange(2**32),
+                ))
+
+        if worker_count == 1:
+            return self._find_best_schedule(self.n_tries)
+
+        best_result = None
+        completed_attempts = 0
+        manager = Manager()
+        progress_queue = manager.Queue()
+        try:
+            with ProcessPoolExecutor(max_workers=worker_count) as executor:
+                future_attempts = {}
+                future_batches = {}
+                for batch_id, payload in enumerate(payloads):
+                    future = executor.submit(
+                        _search_schedule_batch,
+                        (*payload, batch_id, progress_queue),
+                    )
+                    future_attempts[future] = payload[4]
+                    future_batches[future] = batch_id
+
+                pending = set(future_attempts)
+                batch_progress = {}
+                while pending:
+                    if self.cancellation_callback and self.cancellation_callback():
+                        for future in pending:
+                            future.cancel()
+                        break
+
+                    finished, pending = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+                    while not progress_queue.empty():
+                        batch_id, completed, cost = progress_queue.get()
+                        batch_progress[batch_id] = (completed, cost)
+                        completed_attempts = sum(value[0] for value in batch_progress.values())
+                        best_cost = min(
+                            (value[1] for value in batch_progress.values()),
+                            default=None,
+                        )
+                        if self.progress_update_callback:
+                            self.progress_update_callback(int(completed_attempts / self.n_tries * 100))
+                        if self.status_update_callback and best_cost is not None:
+                            self.status_update_callback(
+                                f"{completed_attempts:,} von {self.n_tries:,} Versuchen abgeschlossen · "
+                                f"Qualitätswert: {best_cost:.4f} (je niedriger, desto besser)"
+                            )
+
+                    for future in finished:
+                        schedule, cost = future.result()
+                        batch_id = future_batches[future]
+                        batch_progress[batch_id] = (future_attempts[future], cost)
+                        completed_attempts = sum(value[0] for value in batch_progress.values())
+                        if best_result is None or cost < best_result[1]:
+                            best_result = (schedule, cost)
+                        if self.progress_update_callback:
+                            self.progress_update_callback(int(completed_attempts / self.n_tries * 100))
+                        if self.status_update_callback and best_result:
+                            self.status_update_callback(
+                                f"{completed_attempts:,} von {self.n_tries:,} Versuchen abgeschlossen · "
+                                f"Qualitätswert: {best_result[1]:.4f} (je niedriger, desto besser)"
+                            )
+        finally:
+            manager.shutdown()
+
+        if best_result is None:
+            return self._find_best_schedule(1)
+        return best_result
 
     def convert_schedule_to_names(self, schedule: list) -> pd.DataFrame:
         # Create a table where columns are games and rows are rounds
