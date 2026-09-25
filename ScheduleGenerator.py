@@ -105,7 +105,7 @@ class ScheduleGenerator():
 
         # init
         best_schedule = self.generate_random_schedule()
-        best_cost, best_team_matchups, best_game_counts, best_game_team_counts = self.check_schedule(best_schedule)  # Get initial cost
+        best_cost = self.check_schedule(best_schedule, include_details=False)
         initial_cost = best_cost
         tries = 1
 
@@ -122,14 +122,11 @@ class ScheduleGenerator():
                 cancelled = True
                 break
             random_schedule = self.generate_random_schedule()
-            cost, team_matchups, game_counts, game_team_counts = self.check_schedule(random_schedule)
+            cost = self.check_schedule(random_schedule, include_details=False)
             if cost < best_cost:
                 print(f"New best schedule found after {tries} tries with cost {cost}")
                 best_schedule = random_schedule
                 best_cost = cost
-                best_team_matchups = team_matchups
-                best_game_counts = game_counts
-                best_game_team_counts = game_team_counts
                 if cost < 0.01:
                     print(f"Found a perfect schedule after {tries} tries!")
                     self.progress_update_callback(100)
@@ -158,6 +155,11 @@ class ScheduleGenerator():
                 f"Ergebnis wird gespeichert."
             )
 
+        _, best_team_matchups, best_game_counts, best_game_team_counts = self.check_schedule(
+            best_schedule,
+            include_details=True,
+        )
+
         print("Team matchups:")
         for teams, count in best_team_matchups.items():
             print(f"  Teams {teams[0]} and {teams[1]}: {count} times")
@@ -171,7 +173,13 @@ class ScheduleGenerator():
             print(f"  Game {game_number}: {dict(enumerate(counts, start=1))}")
 
 
-        return self.convert_schedule_to_names(best_schedule), self.convert_game_counts_to_names(best_game_counts), self.convert_team_matchups_to_names(best_team_matchups), self.convert_game_team_counts_to_names(best_game_team_counts)
+        return (
+            self.convert_schedule_to_names(best_schedule),
+            self.convert_game_counts_to_names(best_game_counts),
+            self.convert_team_matchups_to_names(best_team_matchups),
+            self.convert_game_team_counts_to_names(best_game_team_counts),
+            self.convert_team_game_totals_to_names(best_game_team_counts),
+        )
 
     def convert_schedule_to_names(self, schedule: list) -> pd.DataFrame:
         # Create a table where columns are games and rows are rounds
@@ -228,6 +236,18 @@ class ScheduleGenerator():
         df.insert(0, "Game", game_names)
         return df
 
+    def convert_team_game_totals_to_names(self, game_team_counts: np.ndarray) -> pd.DataFrame:
+        """Return the total number of games played by each team."""
+        team_names = [
+            self._format_team_name(team) if team else f"Team {idx}"
+            for idx, team in enumerate(self.team_names)
+        ]
+        totals = np.sum(game_team_counts, axis=0).astype(int)
+        return pd.DataFrame({
+            "Team": team_names,
+            "Games played": totals,
+        })
+
 
     def generate_random_schedule(self) -> list:
         """Generate a random schedule with the given parameters"""
@@ -254,7 +274,11 @@ class ScheduleGenerator():
         # Use a proper round-robin algorithm with rotation to ensure variety
         
         # Shuffle the pairs to create variety
-        random.shuffle(self.all_possible_pairs)
+        pair_count = len(self.all_possible_pairs)
+        if pair_count == 0:
+            return [[] for _ in range(self.n_rounds)]
+        pair_start = random.randrange(pair_count)
+        pair_step = -1 if random.getrandbits(1) else 1
         
         schedule = []
         pairs_used = set()
@@ -266,7 +290,9 @@ class ScheduleGenerator():
             teams_used_this_round = set()
             
             # Try to find pairs for this round
-            for pair in self.all_possible_pairs:
+            for offset in range(pair_count):
+                pair_index = (pair_start + pair_step * offset) % pair_count
+                pair = self.all_possible_pairs[pair_index]
                 team1, team2 = pair
                 
                 # Check if this pair hasn't been used and neither team is already scheduled this round
@@ -286,7 +312,9 @@ class ScheduleGenerator():
             
             # If we couldn't find enough unique pairs, fill with available pairs
             if len(round_schedule) < min(self.n_games, self.n_teams // 2):
-                for pair in self.all_possible_pairs:
+                for offset in range(pair_count):
+                    pair_index = (pair_start + pair_step * offset) % pair_count
+                    pair = self.all_possible_pairs[pair_index]
                     team1, team2 = pair
                     
                     if (team1 not in teams_used_this_round and 
@@ -307,13 +335,11 @@ class ScheduleGenerator():
 
         return schedule
 
-    def check_schedule(self, schedule: list) -> tuple:
+    def check_schedule(self, schedule: list, include_details: bool = True) -> tuple:
         """Check the schedule for balance and return a cost value"""
-        # count how many times each team played against each other
-        team_matchups = {(team1, team2): 0 for team1 in range(self.n_teams) for team2 in range(team1 + 1, self.n_teams)}
-
-        # count how much each game was played by each team
-        game_counts = {game: 0 for game in range(self.n_games)}
+        # Use arrays in the hot path; dictionaries are only created for the final result.
+        team_matchup_counts = np.zeros((self.n_teams, self.n_teams), dtype=np.int32)
+        game_counts_array = np.zeros(self.n_games, dtype=np.int32)
         game_team_counts = np.zeros((self.n_games, self.n_teams))
 
         for round in schedule:
@@ -322,20 +348,32 @@ class ScheduleGenerator():
                 team1 = game[1]
                 team2 = game[2]
 
-                game_counts[game_number] += 1 # count how many times this game was played
+                game_counts_array[game_number] += 1 # count how many times this game was played
                 game_team_counts[game_number, team1] += 1 # count how many times this team played this game
                 game_team_counts[game_number, team2] += 1 # count how many times this team played this game
                 if team1 > team2:   # sort teams to ensure smallest team number is first
                     team1, team2 = team2, team1
-                team_matchups[(team1, team2)] += 1 # count how many times this matchup was played
+                team_matchup_counts[team1, team2] += 1 # count how many times this matchup was played
 
         rounds_played_each_team = np.sum(game_team_counts, axis=0) # total rounds played by each team
-        var_game_counts = np.var(list(game_counts.values())) # variance of game counts across all games
+        var_game_counts = np.var(game_counts_array) # variance of game counts across all games
         var_rounds_played_each_team = np.var(rounds_played_each_team) # variance of rounds played by each team
-        var_team_matchups = np.var(list(team_matchups.values())) # variance of team matchups across all pairs
+        var_team_matchups = np.var(team_matchup_counts[np.triu_indices(self.n_teams, k=1)]) # variance of team matchups across all pairs
         var_game_team_counts = np.var(game_team_counts)  # variance of game counts for each team
 
         cost_value = var_game_counts + var_game_team_counts*20 + var_rounds_played_each_team + var_team_matchups
 
+        if not include_details:
+            return cost_value
+
+        team_matchups = {
+            (team1, team2): int(team_matchup_counts[team1, team2])
+            for team1 in range(self.n_teams)
+            for team2 in range(team1 + 1, self.n_teams)
+        }
+        game_counts = {
+            game: int(game_counts_array[game])
+            for game in range(self.n_games)
+        }
         return cost_value, team_matchups, game_counts, game_team_counts
         

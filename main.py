@@ -579,7 +579,7 @@ class Window(QMainWindow):
             self.generation_status.setText("Generierung fehlgeschlagen.")
 
     def generation_finished(self, results):
-        schedule, game_counts, team_matchups, game_team_counts = results
+        schedule, game_counts, team_matchups, game_team_counts, team_game_totals = results
         self.generation_status.setText("Generierung abgeschlossen. Wählen Sie einen Speicherort.")
         if debug:
             file_path = "schedule.xlsx"
@@ -596,6 +596,7 @@ class Window(QMainWindow):
                 game_counts.to_excel(writer, sheet_name="Game Counts", index=False)
                 team_matchups.to_excel(writer, sheet_name="Team Matchups", index=False)
                 game_team_counts.to_excel(writer, sheet_name="Game Team Counts", index=False)
+                team_game_totals.to_excel(writer, sheet_name="Team Game Totals", index=False)
             QMessageBox.information(self, "Spielplan gespeichert", f"Die Datei wurde gespeichert unter:\n{file_path}")
             self.generation_status.setText(f"Gespeichert: {file_path}")
         except Exception as error:
