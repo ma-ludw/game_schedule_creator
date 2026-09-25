@@ -1,12 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from importlib.util import find_spec
+
+
+gpu_hiddenimports = (
+    ["pyopencl", "pyopencl._cl"]
+    if find_spec("pyopencl") is not None
+    else []
+)
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=[('app_icon.ico', '.')],
-    hiddenimports=[],
+    hiddenimports=gpu_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

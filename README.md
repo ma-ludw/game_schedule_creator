@@ -10,6 +10,7 @@ This tool helps you create balanced game schedules for events where multiple "Ju
 - **Excel Export**: Automatically generates detailed Excel reports
 - **Real-time Progress**: Shows optimization progress with a progress bar
 - **Customizable Games**: Define your own game names and quantities
+- **OpenCL GPU Search**: Generates and scores schedule candidates on compatible GPUs when PyOpenCL is installed; otherwise, it reports and uses the CPU backend
 
 ## Installation & Requirements
 
@@ -38,6 +39,24 @@ This tool helps you create balanced game schedules for events where multiple "Ju
    python main.py
    ```
 
+### Optional GPU Acceleration
+
+The search automatically uses an OpenCL-compatible GPU when one is available.
+Candidate schedules are generated, scored, and compared on the device in
+batches. Only the current best schedule and its score are copied back to the
+CPU. CPU-only operation remains available when OpenCL is not installed or no
+GPU device is detected.
+
+Install the optional OpenCL dependency in the application environment with:
+
+```bash
+python -m pip install -r requirements-gpu.txt
+```
+
+The GPU must have a working OpenCL driver from its vendor. PyOpenCL does not
+install GPU drivers. The generation status shows which backend is being used
+and explains when the application falls back to the CPU.
+
 ### Building a Windows Executable
 
 The repository includes a PyInstaller configuration in `main.spec`. Activate your
@@ -57,6 +76,10 @@ The executable is created at:
 ```text
 dist\main.exe
 ```
+
+To include OpenCL GPU support in the executable, install
+`requirements-gpu.txt` in the build environment before running PyInstaller.
+Without PyOpenCL at build time, the executable uses the CPU backend.
 
 The build includes the application icon from `app_icon.ico` and does not open a
 console window. To start the generated application from PowerShell:
