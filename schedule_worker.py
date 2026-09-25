@@ -12,11 +12,18 @@ class ScheduleWorker(QObject):
     completed = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, jungscharen: list[Jungschar], rounds: int, game_names: list[str]) -> None:
+    def __init__(
+        self,
+        jungscharen: list[Jungschar],
+        rounds: int,
+        game_names: list[str],
+        time_limit_seconds: int = 60,
+    ) -> None:
         super().__init__()
         self.jungscharen = jungscharen
         self.rounds = rounds
         self.game_names = game_names
+        self.time_limit_seconds = time_limit_seconds
         self.cancel_requested = False
 
     def cancel(self) -> None:
@@ -32,6 +39,7 @@ class ScheduleWorker(QObject):
                 progress_update_callback=self.progress.emit,
                 cancellation_callback=lambda: self.cancel_requested,
                 status_update_callback=self.status.emit,
+                time_limit_seconds=self.time_limit_seconds,
             )
             self.completed.emit(generator.generate_schedule())
         except Exception as error:

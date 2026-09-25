@@ -49,6 +49,9 @@ MANUAL_HTML = """
     <ol>
         <li>Öffnen Sie links die Seite <b>Runden</b>.</li>
         <li>Stellen Sie ein, wie viele Runden gespielt werden sollen.</li>
+        <li>Stellen Sie bei <b>Suchzeit (Sekunden)</b> ein, wie lange
+        nach einem möglichst ausgewogenen Spielplan gesucht werden soll.
+        Der Standardwert beträgt 60 Sekunden.</li>
     </ol>
 
     <h2>Schritt 4: Angaben prüfen und Spielplan erstellen</h2>

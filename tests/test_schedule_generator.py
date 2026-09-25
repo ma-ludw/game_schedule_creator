@@ -1,5 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import time
 import unittest
 
 import pandas as pd
@@ -43,6 +44,24 @@ class ScheduleGeneratorTests(unittest.TestCase):
                 for team_number in (first_team, second_team)
             ]
             self.assertEqual(len(teams_in_round), len(set(teams_in_round)))
+
+    def test_late_batch_progress_cannot_increase_best_cost_or_attempts(self) -> None:
+        batch_progress = {0: (500, 2.5)}
+
+        ScheduleGenerator._merge_batch_progress(batch_progress, 0, 250, 3.0)
+
+        self.assertEqual(batch_progress[0], (500, 2.5))
+
+    def test_time_limited_search_runs_until_deadline(self) -> None:
+        started_at = time.monotonic()
+        self.generator._find_best_schedule(
+            None,
+            deadline=started_at + 0.05,
+        )
+        elapsed = time.monotonic() - started_at
+
+        self.assertGreaterEqual(elapsed, 0.05)
+        self.assertLess(elapsed, 1.0)
 
     def test_schedule_generation_returns_all_report_tables(self) -> None:
         results = self.generator.generate_schedule()

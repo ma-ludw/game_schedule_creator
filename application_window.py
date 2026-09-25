@@ -243,6 +243,17 @@ class Window(QMainWindow):
         rounds_row.addWidget(self.ui.spinBox_n_rounds)
         rounds_row.addStretch()
         layout.addLayout(rounds_row)
+        search_time_row = QHBoxLayout()
+        search_time_row.addWidget(QLabel("Suchzeit (Sekunden)"))
+        self.search_time_input = QSpinBox()
+        self.search_time_input.setRange(1, 86_400)
+        self.search_time_input.setValue(60)
+        self.search_time_input.setToolTip(
+            "Legt fest, wie lange nach einem möglichst ausgewogenen Spielplan gesucht wird."
+        )
+        search_time_row.addWidget(self.search_time_input)
+        search_time_row.addStretch()
+        layout.addLayout(search_time_row)
         layout.addStretch()
         layout.addWidget(self.ui.pushButton_generate)
         self.cancel_button = QPushButton("Generierung abbrechen")
@@ -448,6 +459,7 @@ class Window(QMainWindow):
         self._set_spinbox_value(self.ui.spinBox_n_jungscharen, 2)
         self._set_spinbox_value(self.ui.spinBox_n_games, 1)
         self._set_spinbox_value(self.ui.spinBox_n_rounds, 1)
+        self.search_time_input.setValue(60)
 
         self._update_team_names()
         self._sync_editors()
@@ -474,7 +486,12 @@ class Window(QMainWindow):
             "ob sich weiteres Warten lohnt."
         )
         self.worker_thread = QThread(self)
-        self.worker = ScheduleWorker(self.jungscharen, self.n_rounds, list(self.game_names))
+        self.worker = ScheduleWorker(
+            self.jungscharen,
+            self.n_rounds,
+            list(self.game_names),
+            time_limit_seconds=self.search_time_input.value(),
+        )
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.progress.connect(self.ui.progressBar_generate.setValue)
