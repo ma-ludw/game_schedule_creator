@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QFileDialog,
+    QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStackedWidget,
     QFormLayout,
+    QTextBrowser,
 )
 
 import sys
@@ -76,6 +78,8 @@ class Window(QMainWindow):
         # init window
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.menuBar().hide()
+        self.manual_window = None
         self.setWindowTitle("Spielplan Generator")
         self.setWindowIcon(QIcon(str(resource_path("app_icon.ico"))))
         self.setMinimumSize(1100, 700)
@@ -91,6 +95,9 @@ class Window(QMainWindow):
 
         # init variables
         self.jungscharen: list[Jungschar] = [Jungschar(0, 1)]
+        self.ui.spinBox_n_jungscharen.blockSignals(True)
+        self.ui.spinBox_n_jungscharen.setValue(2)
+        self.ui.spinBox_n_jungscharen.blockSignals(False)
         self.n_jungscharen_changed(self.ui.spinBox_n_jungscharen.value())
         self.game_names = []
         self.n_games_changed(self.ui.spinBox_n_games.value())
@@ -117,6 +124,101 @@ class Window(QMainWindow):
         self.ui.spinBox_n_games.setToolTip("Anzahl der Spiele")
         self.ui.spinBox_n_rounds.setToolTip("Anzahl der Spielrunden")
 
+    def open_manual(self):
+        if self.manual_window is None:
+            self.manual_window = QDialog(self, Qt.WindowType.Window)
+            self.manual_window.setWindowTitle("Spielplan Generator – Benutzerhandbuch")
+            self.manual_window.setWindowIcon(QIcon(str(resource_path("app_icon.ico"))))
+            self.manual_window.resize(760, 700)
+
+            layout = QVBoxLayout(self.manual_window)
+            manual = QTextBrowser(self.manual_window)
+            manual.setOpenExternalLinks(False)
+            manual.setHtml(
+                """
+                <html>
+                <head>
+                    <style>
+                        body { color: #e2e8f0; background: #0f172a; font-family: sans-serif; }
+                        h1 { color: #38bdf8; }
+                        h2 { color: #7dd3fc; margin-top: 24px; }
+                        p, li { line-height: 1.5; }
+                        .hinweis { color: #a7f3d0; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Benutzerhandbuch</h1>
+                    <p>Mit dem Spielplan Generator richten Sie Jungscharen, Gruppen,
+                    Spiele und Runden ein und erstellen daraus einen Spielplan als
+                    Excel-Datei.</p>
+                    <p class="hinweis"><b>Wichtig für die Begegnungen:</b> Teams aus
+                    derselben Jungschar spielen nicht gegeneinander. Wenn jedes Team
+                    grundsätzlich gegen jedes andere Team spielen können soll, legen
+                    Sie jedes Team als eigene Jungschar mit genau einem Team an.</p>
+
+                    <h2>Schritt 1: Jungscharen einrichten</h2>
+                    <ol>
+                        <li>Wählen Sie links <b>Gruppen</b>.</li>
+                        <li>Legen Sie bei <b>Anzahl Jungscharen</b> fest, wie viele
+                        Jungscharen teilnehmen. Für einen Spielplan sind mindestens
+                        zwei Jungscharen erforderlich.</li>
+                        <li>Ändern Sie den Namen einer Jungschar im Eingabefeld neben
+                        <b>Jungschar 1 – Name</b> (die Nummer passt sich je Eintrag an)
+                        und legen Sie daneben die Anzahl der Teams fest.</li>
+                        <li>Ändern Sie die einzelnen Teamnamen im Abschnitt
+                        <b>Teamnamen (hier ändern)</b> unterhalb der Jungscharen.</li>
+                    </ol>
+
+                    <h2>Schritt 2: Spiele benennen</h2>
+                    <ol>
+                        <li>Öffnen Sie links die Seite <b>Spiele</b>.</li>
+                        <li>Legen Sie die Anzahl der Spiele fest.</li>
+                        <li>Geben Sie jedem Spiel einen eindeutigen, gut erkennbaren
+                        Namen.</li>
+                    </ol>
+
+                    <h2>Schritt 3: Runden festlegen</h2>
+                    <ol>
+                        <li>Öffnen Sie links die Seite <b>Runden</b>.</li>
+                        <li>Stellen Sie ein, wie viele Runden gespielt werden sollen.</li>
+                    </ol>
+
+                    <h2>Schritt 4: Angaben prüfen und Spielplan erstellen</h2>
+                    <ol>
+                        <li>Kontrollieren Sie, ob alle Jungscharen, Gruppen und Spiele
+                        einen Namen haben.</li>
+                        <li>Klicken Sie auf <b>Spielplan generieren</b>.</li>
+                        <li>Während der Berechnung sehen Sie den Fortschritt. Mit
+                        <b>Generierung abbrechen</b> können Sie den Vorgang stoppen.</li>
+                    </ol>
+
+                    <h2>Schritt 5: Excel-Datei speichern</h2>
+                    <p>Nach erfolgreicher Berechnung wählen Sie im Speichern-Dialog
+                    einen Speicherort und Dateinamen. Bestätigen Sie anschließend
+                    das Speichern.</p>
+
+                    <h2>Ergebnis und weitere Funktionen</h2>
+                    <p>Die Excel-Datei enthält den Spielplan sowie Übersichten zu
+                    Spielhäufigkeiten, Begegnungen und zur Teilnahme der Gruppen:
+                    <b>Schedule</b>, <b>Game Counts</b>, <b>Team Matchups</b>,
+                    <b>Game Team Counts</b> und <b>Team Game Totals</b>.</p>
+                    <p class="hinweis">Mit <b>Eingaben zurücksetzen</b> können Sie
+                    alle Einstellungen auf die Standardwerte zurücksetzen. Dabei
+                    werden Ihre aktuellen Eingaben verworfen.</p>
+                </body>
+                </html>
+                """
+            )
+            layout.addWidget(manual)
+
+            close_button = QPushButton("Schließen", self.manual_window)
+            close_button.clicked.connect(self.manual_window.close)
+            layout.addWidget(close_button)
+
+        self.manual_window.show()
+        self.manual_window.raise_()
+        self.manual_window.activateWindow()
+
     def _build_dashboard_layout(self):
         old_layout = self.ui.centralwidget.layout()
         if old_layout is not None:
@@ -138,11 +240,19 @@ class Window(QMainWindow):
         sidebar_layout.setContentsMargins(0, 0, 0, 0)
         sidebar_layout.setSpacing(10)
 
+        manual_button = QPushButton("Anleitung")
+        manual_button.setCursor(Qt.PointingHandCursor)
+        manual_button.setToolTip("Öffnet das deutschsprachige Benutzerhandbuch.")
+        manual_button.clicked.connect(self.open_manual)
+        sidebar_layout.addWidget(manual_button)
+
+        sidebar_layout.addSpacing(30)
+
         self.nav_buttons = []
-        for label in ["Einrichtung", "Spiele", "Runden"]:
+        for label in ["Gruppen", "Spiele", "Runden"]:
             button = QPushButton(label)
             button.setCheckable(True)
-            button.setChecked(label == "Einrichtung")
+            button.setChecked(label == "Gruppen")
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda checked, index=len(self.nav_buttons): self._show_page(index))
             self.nav_buttons.append(button)
@@ -175,7 +285,13 @@ class Window(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(14)
-        intro = QLabel("Lege zunächst die Jungscharen an. Die Gruppennamen werden automatisch erzeugt und können anschließend direkt angepasst werden.")
+        intro = QLabel(
+            "Lege zunächst die Jungscharen an. Ändere den Jungschar-Namen im "
+            "Eingabefeld neben „Jungschar … – Name“ und die Teamnamen im Abschnitt "
+            "„Teamnamen (hier ändern)“ weiter unten. Teams derselben Jungschar "
+            "spielen nicht gegeneinander. Sollen alle Teams gegeneinander spielen "
+            "können, lege jedes Team als eigene Jungschar mit einem Team an."
+        )
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
@@ -186,10 +302,12 @@ class Window(QMainWindow):
         count_row.addStretch()
         layout.addLayout(count_row)
 
+        layout.addWidget(QLabel("Jungschar-Namen und Anzahl Teams"))
         self.team_editor = QWidget()
         self.team_editor_layout = QVBoxLayout(self.team_editor)
         self.team_editor_layout.setContentsMargins(8, 8, 8, 8)
         self.team_editor_layout.setSpacing(12)
+        self.team_editor_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         team_scroll = QScrollArea()
         team_scroll.setWidgetResizable(True)
         team_scroll.setWidget(self.team_editor)
@@ -200,7 +318,7 @@ class Window(QMainWindow):
         self.group_editor_layout.setContentsMargins(8, 8, 8, 8)
         self.group_editor_layout.setHorizontalSpacing(16)
         self.group_editor_layout.setVerticalSpacing(10)
-        layout.addWidget(QLabel("Gruppennamen"))
+        layout.addWidget(QLabel("Teamnamen (hier ändern)"))
         group_scroll = QScrollArea()
         group_scroll.setWidgetResizable(True)
         group_scroll.setMinimumHeight(220)
@@ -296,10 +414,11 @@ class Window(QMainWindow):
             self.group_count_inputs.append(count_input)
             row = QHBoxLayout()
             row.setSpacing(12)
-            row.addWidget(QLabel(f"Jungschar {index + 1}"))
+            row.addWidget(QLabel(f"Jungschar {index + 1} – Name"))
             name_input.setMinimumWidth(180)
+            name_input.setToolTip("Hier den Namen dieser Jungschar ändern.")
             row.addWidget(name_input, 1)
-            row.addWidget(QLabel("Gruppen"))
+            row.addWidget(QLabel("Teams"))
             row.addWidget(count_input)
             self.team_editor_layout.addLayout(row)
 
@@ -309,7 +428,10 @@ class Window(QMainWindow):
                 input_widget.editingFinished.connect(
                     lambda j=js, g=group, w=input_widget: self._group_name_changed(j, g, w)
                 )
-                self.group_editor_layout.addRow(f"{js.name} {group_index + 1}", input_widget)
+                input_widget.setToolTip("Hier den Namen dieses Teams ändern.")
+                self.group_editor_layout.addRow(
+                    f"{js.name} – Team {group_index + 1}", input_widget
+                )
 
         self.game_name_inputs = []
         for index, game_name in enumerate(self.game_names):
@@ -330,7 +452,7 @@ class Window(QMainWindow):
         self._sync_editors()
 
     def _group_name_changed(self, js, group, widget):
-        group.name = widget.text().strip() or self._default_group_name(js.name, js.groups.index(group))
+        group.name = widget.text().strip() or self._default_group_name(js.groups.index(group))
         widget.setText(group.name)
 
     def _game_name_changed(self, index, widget):
@@ -389,6 +511,11 @@ class Window(QMainWindow):
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38bdf8, stop:1 #0ea5e9);
+            }
+            QPushButton:checked {
+                background: #047857;
+                border: 2px solid #6ee7b7;
+                color: #f8fafc;
             }
             QPushButton:pressed {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0369a1, stop:1 #075985);
@@ -454,8 +581,8 @@ class Window(QMainWindow):
     def _default_jungschar_name(self, index: int) -> str:
         return f"Jungschar {index + 1}"
 
-    def _default_group_name(self, js_name: str, index: int) -> str:
-        return f"{js_name} Gruppe {index + 1}"
+    def _default_group_name(self, index: int) -> str:
+        return f"Team {index + 1}"
 
     def _default_game_name(self, index: int) -> str:
         return f"Spiel {index + 1}"
@@ -476,10 +603,7 @@ class Window(QMainWindow):
     def set_upt_group_naming_table(self):
         for js in self.jungscharen:
             for g_idx, g in enumerate(js.groups):
-                js_name = js.name.strip() if js.name and js.name.strip() else self._default_jungschar_name(
-                    self.jungscharen.index(js)
-                )
-                g.name = g.name.strip() if g.name and g.name.strip() else self._default_group_name(js_name, g_idx)
+                g.name = g.name.strip() if g.name and g.name.strip() else self._default_group_name(g_idx)
         self.refresh_summary()
         if hasattr(self, "team_editor_layout"):
             self._sync_editors()
@@ -521,7 +645,7 @@ class Window(QMainWindow):
         for index in range(2):
             jungschar = Jungschar(index, 1)
             jungschar.name = self._default_jungschar_name(index)
-            jungschar.groups[0].name = self._default_group_name(jungschar.name, 0)
+            jungschar.groups[0].name = self._default_group_name(0)
             self.jungscharen.append(jungschar)
 
         self.game_names = [self._default_game_name(0)]
