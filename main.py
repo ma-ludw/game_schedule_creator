@@ -1,11 +1,9 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
-    QTableWidgetItem,
     QMessageBox,
     QFileDialog,
-    QHeaderView,
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
@@ -29,6 +27,38 @@ from ScheduleGenerator import ScheduleGenerator
 
 
 debug = False
+
+
+class ScheduleWorker(QObject):
+    progress = Signal(int)
+    status = Signal(str)
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, jungscharen, rounds, game_names):
+        super().__init__()
+        self.jungscharen = jungscharen
+        self.rounds = rounds
+        self.game_names = game_names
+        self.cancel_requested = False
+
+    def cancel(self):
+        self.cancel_requested = True
+
+    def run(self):
+        try:
+            generator = ScheduleGenerator(
+                self.jungscharen,
+                self.rounds,
+                len(self.game_names),
+                self.game_names,
+                progress_update_callback=self.progress.emit,
+                cancellation_callback=lambda: self.cancel_requested,
+                status_update_callback=self.status.emit,
+            )
+            self.completed.emit(generator.generate_schedule())
+        except Exception as error:
+            self.failed.emit(str(error))
 
 
 class Window(QMainWindow):
@@ -63,6 +93,8 @@ class Window(QMainWindow):
 
         self._build_dashboard_layout()
         self.refresh_summary()
+        self.worker_thread = None
+        self.worker = None
 
         # show Main Window
         self.show()
@@ -98,7 +130,7 @@ class Window(QMainWindow):
         sidebar_layout.setSpacing(10)
 
         self.nav_buttons = []
-        for label in ["Einrichtung", "Spiele", "Vorschau"]:
+        for label in ["Einrichtung", "Spiele", "Runden"]:
             button = QPushButton(label)
             button.setCheckable(True)
             button.setChecked(label == "Einrichtung")
@@ -205,6 +237,17 @@ class Window(QMainWindow):
         layout.addLayout(rounds_row)
         layout.addStretch()
         layout.addWidget(self.ui.pushButton_generate)
+        self.cancel_button = QPushButton("Generierung abbrechen")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_generation)
+        layout.addWidget(self.cancel_button)
+        self.generation_status = QLabel("Bereit zur Generierung.")
+        self.generation_status.setWordWrap(True)
+        self.generation_status.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        layout.addWidget(self.generation_status)
+        self.reset_button = QPushButton("Eingaben zurücksetzen")
+        self.reset_button.clicked.connect(self.reset_form)
+        layout.addWidget(self.reset_button)
         layout.addWidget(self.ui.progressBar_generate)
         return page
 
@@ -399,15 +442,6 @@ class Window(QMainWindow):
             """
         )
 
-    def _configure_table(self, table):
-        table.setAlternatingRowColors(True)
-        table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
-        table.setSelectionMode(table.SelectionMode.SingleSelection)
-        table.setEditTriggers(table.EditTrigger.DoubleClicked | table.EditTrigger.EditKeyPressed)
-        table.verticalHeader().setVisible(False)
-        table.horizontalHeader().setStretchLastSection(True)
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-
     def _default_jungschar_name(self, index: int) -> str:
         return f"Jungschar {index + 1}"
 
@@ -454,42 +488,118 @@ class Window(QMainWindow):
         self.n_rounds = value
         self.refresh_summary()
 
-    # def enable_multiple_jungscharen(self, enable: bool):
-    #     self.ui.tableWidget_n_groups.setEnabled(enable)
-    #     self.ui.tableWidget_group_names_jungscharen.setEnabled(enable)
+    def validate_inputs(self):
+        if len(self.jungscharen) < 2:
+            return "Mindestens zwei Jungscharen werden benötigt."
+        if any(not js.name.strip() for js in self.jungscharen):
+            return "Bitte benennen Sie alle Jungscharen."
+        if any(not group.name.strip() for js in self.jungscharen for group in js.groups):
+            return "Bitte benennen Sie alle Gruppen."
+        if not self.game_names or any(not name.strip() for name in self.game_names):
+            return "Bitte benennen Sie alle Spiele."
+        return None
+
+    def reset_form(self):
+        answer = QMessageBox.question(
+            self,
+            "Eingaben zurücksetzen",
+            "Möchten Sie alle Eingaben auf die Standardwerte zurücksetzen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.jungscharen = []
+        for index in range(2):
+            jungschar = Jungschar(index, 1)
+            jungschar.name = self._default_jungschar_name(index)
+            jungschar.groups[0].name = self._default_group_name(jungschar.name, 0)
+            self.jungscharen.append(jungschar)
+
+        self.game_names = [self._default_game_name(0)]
+        self.n_rounds = 1
+
+        self.ui.spinBox_n_jungscharen.blockSignals(True)
+        self.ui.spinBox_n_games.blockSignals(True)
+        self.ui.spinBox_n_rounds.blockSignals(True)
+        self.ui.spinBox_n_jungscharen.setValue(2)
+        self.ui.spinBox_n_games.setValue(1)
+        self.ui.spinBox_n_rounds.setValue(1)
+        self.ui.spinBox_n_jungscharen.blockSignals(False)
+        self.ui.spinBox_n_games.blockSignals(False)
+        self.ui.spinBox_n_rounds.blockSignals(False)
+
+        self.set_upt_group_naming_table()
+        self._sync_editors()
+        self._show_page(0)
+        self.refresh_summary()
+
+    def cancel_generation(self):
+        if self.worker is not None:
+            self.worker.cancel()
+            self.cancel_button.setEnabled(False)
 
     def generate(self):
-        try:
-            schedulegenerator = ScheduleGenerator(
-                self.jungscharen,
-                self.n_rounds,
-                len(self.game_names),
-                self.game_names,
-                progress_update_callback=self.ui.progressBar_generate.setValue
-            )
-            schedule, game_counts, team_matchups, game_team_counts = schedulegenerator.generate_schedule()
-            print(schedule)
-        except Exception as e:
-            if debug:
-                raise e  # re-raise the exception for debugging
-            else:
-                QMessageBox.critical(self, "Error", f"An error occurred while generating the schedule: {e}")
+        validation_error = self.validate_inputs()
+        if validation_error:
+            QMessageBox.warning(self, "Eingaben prüfen", validation_error)
             return
-        
-        # Save schedule to Excel file
-        if debug:
-            file_path = 'schedule.xlsx'
-        else:
-            # Ask the user where to save the schedule file
-            file_path, _ = QFileDialog.getSaveFileName(self, "Save Schedule", "schedule.xlsx", "Excel Files (*.xlsx)")
-            if not file_path:
-                file_path = 'schedule.xlsx'  # User cancelled
 
-        with pd.ExcelWriter(file_path) as writer:
-                schedule.to_excel(writer, sheet_name='Schedule')
-                game_counts.to_excel(writer, sheet_name='Game Counts', index=False)
-                team_matchups.to_excel(writer, sheet_name='Team Matchups', index=False)
-                game_team_counts.to_excel(writer, sheet_name='Game Team Counts', index=False)
+        self.ui.pushButton_generate.setEnabled(False)
+        self.reset_button.setEnabled(False)
+        self.cancel_button.setEnabled(True)
+        self.ui.progressBar_generate.setValue(0)
+        self.generation_status.setText("Generierung läuft. Die Anzeige hilft bei der Entscheidung, ob sich weiteres Warten lohnt.")
+        self.worker_thread = QThread(self)
+        self.worker = ScheduleWorker(self.jungscharen, self.n_rounds, list(self.game_names))
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.started.connect(self.worker.run)
+        self.worker.progress.connect(self.ui.progressBar_generate.setValue)
+        self.worker.status.connect(self.generation_status.setText)
+        self.worker.completed.connect(self.generation_finished)
+        self.worker.failed.connect(self.generation_failed)
+        self.worker.completed.connect(self.worker_thread.quit)
+        self.worker.failed.connect(self.worker_thread.quit)
+        self.worker_thread.finished.connect(self.generation_cleanup)
+        self.worker_thread.start()
+
+    def generation_cleanup(self):
+        if self.worker is not None:
+            self.worker.deleteLater()
+        if self.worker_thread is not None:
+            self.worker_thread.deleteLater()
+        self.worker = None
+        self.worker_thread = None
+        self.ui.pushButton_generate.setEnabled(True)
+        self.reset_button.setEnabled(True)
+        self.cancel_button.setEnabled(False)
+
+    def generation_failed(self, message):
+        if message != "Generation cancelled":
+            QMessageBox.critical(self, "Fehler", f"Der Spielplan konnte nicht erstellt werden: {message}")
+            self.generation_status.setText("Generierung fehlgeschlagen.")
+
+    def generation_finished(self, results):
+        schedule, game_counts, team_matchups, game_team_counts = results
+        self.generation_status.setText("Generierung abgeschlossen. Wählen Sie einen Speicherort.")
+        if debug:
+            file_path = "schedule.xlsx"
+        else:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Spielplan speichern", "schedule.xlsx", "Excel-Dateien (*.xlsx)"
+            )
+            if not file_path:
+                return
+
+        try:
+            with pd.ExcelWriter(file_path) as writer:
+                schedule.to_excel(writer, sheet_name="Schedule")
+                game_counts.to_excel(writer, sheet_name="Game Counts", index=False)
+                team_matchups.to_excel(writer, sheet_name="Team Matchups", index=False)
+                game_team_counts.to_excel(writer, sheet_name="Game Team Counts", index=False)
+            QMessageBox.information(self, "Spielplan gespeichert", f"Die Datei wurde gespeichert unter:\n{file_path}")
+            self.generation_status.setText(f"Gespeichert: {file_path}")
+        except Exception as error:
+            QMessageBox.critical(self, "Fehler", f"Die Excel-Datei konnte nicht gespeichert werden: {error}")
 
 
 

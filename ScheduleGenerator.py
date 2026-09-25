@@ -2,8 +2,8 @@ from Jungschar import Jungschar
 import pandas as pd
 import numpy as np
 import random
+import time
 
-from PySide6.QtWidgets import QApplication
 from typing import Callable
 
 
@@ -15,7 +15,9 @@ class ScheduleGenerator():
         n_rounds: int,
         n_games: int,
         games_names: list[str],
-        progress_update_callback: Callable
+        progress_update_callback: Callable,
+        cancellation_callback: Callable[[], bool] | None = None,
+        status_update_callback: Callable[[str], None] | None = None,
     ):
         self.jungscharen = jungscharen # List of Jungschar objects
         self.n_games = n_games # Number of games
@@ -23,6 +25,8 @@ class ScheduleGenerator():
         self.n_rounds = n_rounds # Number of rounds
 
         self.progress_update_callback = progress_update_callback
+        self.cancellation_callback = cancellation_callback
+        self.status_update_callback = status_update_callback
 
         self.n_teams = sum([js.n_groups for js in self.jungscharen]) # Total number of teams across all Jungscharen
         
@@ -102,11 +106,21 @@ class ScheduleGenerator():
         # init
         best_schedule = self.generate_random_schedule()
         best_cost, best_team_matchups, best_game_counts, best_game_team_counts = self.check_schedule(best_schedule)  # Get initial cost
+        initial_cost = best_cost
         tries = 1
 
         self.progress_update_callback(0)
-        QApplication.processEvents()
+        started_at = time.monotonic()
+        if self.status_update_callback:
+            self.status_update_callback(
+                f"Startplan bewertet · aktueller Qualitätswert: {best_cost:.4f} "
+                f"(je niedriger, desto besser)"
+            )
+        cancelled = False
         for _ in range(self.n_tries):
+            if self.cancellation_callback and self.cancellation_callback():
+                cancelled = True
+                break
             random_schedule = self.generate_random_schedule()
             cost, team_matchups, game_counts, game_team_counts = self.check_schedule(random_schedule)
             if cost < best_cost:
@@ -119,12 +133,30 @@ class ScheduleGenerator():
                 if cost < 0.01:
                     print(f"Found a perfect schedule after {tries} tries!")
                     self.progress_update_callback(100)
-                    QApplication.processEvents()
+                    if self.status_update_callback:
+                        self.status_update_callback(
+                            f"Perfekter Plan gefunden · Qualitätswert: {best_cost:.4f}"
+                        )
                     break
             tries += 1
             if self.progress_update_callback and tries % 1000 == 0:  # Update every 1000 iterations to avoid too frequent updates
-                self.progress_update_callback(int((tries / self.n_tries) * 100))
-                QApplication.processEvents()  # Force GUI update
+                progress = int((tries / self.n_tries) * 100)
+                self.progress_update_callback(progress)
+                if self.status_update_callback:
+                    elapsed = time.monotonic() - started_at
+                    rate = tries / elapsed if elapsed > 0 else 0
+                    remaining = (self.n_tries - tries) / rate if rate > 0 else 0
+                    self.status_update_callback(
+                        f"Versuch {tries:,} von {self.n_tries:,} · "
+                        f"{elapsed:.0f} s vergangen · ca. {remaining:.0f} s verbleibend · "
+                        f"Qualitätswert: {best_cost:.4f} (je niedriger, desto besser)"
+                    )
+
+        if cancelled and self.status_update_callback:
+            self.status_update_callback(
+                f"Nach Versuch {tries:,} abgebrochen · Qualitätswert: {best_cost:.4f} · "
+                f"Ergebnis wird gespeichert."
+            )
 
         print("Team matchups:")
         for teams, count in best_team_matchups.items():
