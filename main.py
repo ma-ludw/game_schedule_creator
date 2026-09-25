@@ -1,4 +1,5 @@
 from PySide6.QtCore import QObject, QThread, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 
 import sys
 from multiprocessing import freeze_support
+from pathlib import Path
 import pandas as pd
 
 from MainWindow import Ui_MainWindow
@@ -28,6 +30,11 @@ from ScheduleGenerator import ScheduleGenerator
 
 
 debug = False
+
+
+def resource_path(filename):
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_path / filename
 
 
 class ScheduleWorker(QObject):
@@ -70,6 +77,7 @@ class Window(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.setWindowTitle("Spielplan Generator")
+        self.setWindowIcon(QIcon(str(resource_path("app_icon.ico"))))
         self.setMinimumSize(1100, 700)
         self._apply_user_friendly_style()
 

@@ -28,6 +28,36 @@ This tool helps you create balanced game schedules for events where multiple "Ju
    python main.py
    ```
 
+### Building a Windows Executable
+
+The repository includes a PyInstaller configuration in `main.spec`. Activate your
+virtual environment first, then run:
+
+```powershell
+python -m pip install pyinstaller
+
+pyinstaller `
+  --clean `
+  --noconfirm `
+  main.spec
+```
+
+The executable is created at:
+
+```text
+dist\main.exe
+```
+
+The build includes the application icon from `app_icon.ico` and does not open a
+console window. To start the generated application from PowerShell:
+
+```powershell
+& ".\dist\main.exe"
+```
+
+If PyInstaller is already installed in the virtual environment, the installation
+command can be skipped.
+
 ## Usage Instructions
 
 ### Step 1: Configure Jungscharen
