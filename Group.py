@@ -1,7 +1,7 @@
 
+class Group:
+    """A named team belonging to a Jungschar."""
 
-class Group():
-
-    def __init__(self, group_id: int):
-        self.name = str(group_id)
+    def __init__(self, group_id: int) -> None:
+        self.name = f"Team {group_id + 1}"
         self.id = group_id
