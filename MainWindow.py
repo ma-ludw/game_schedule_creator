@@ -179,7 +179,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"MainWindow", None))
-        self.actionDokumentation.setText(QCoreApplication.translate("MainWindow", u"Dokumentation", None))
+        self.actionDokumentation.setText(QCoreApplication.translate("MainWindow", u"Benutzerhandbuch öffnen", None))
         self.titleLabel.setText(QCoreApplication.translate("MainWindow", u"Spielplan konfigurieren", None))
         self.subtitleLabel.setText(QCoreApplication.translate("MainWindow", u"Lege Gruppen, Spiele und Runden fest und generiere anschließend den Spielplan.", None))
         self.pushButton_generate.setText(QCoreApplication.translate("MainWindow", u"Spielplan generieren", None))
@@ -187,6 +187,5 @@ class Ui_MainWindow(object):
         self.label_4.setText(QCoreApplication.translate("MainWindow", u"Anzahl Runden", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Anzahl Jungscharen", None))
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"Anzahl Spiele", None))
-        self.menuInfo.setTitle(QCoreApplication.translate("MainWindow", u"Info", None))
+        self.menuInfo.setTitle(QCoreApplication.translate("MainWindow", u"Anleitung", None))
     # retranslateUi
-
